@@ -10,5 +10,6 @@ export function ageFromBirth(birth: string, on = todayLocal()): number | '' {
   return cy-y-((cm<m || (cm===m && cd<d)) ? 1 : 0);
 }
 export function normalizeAssessment(data: Record<string, any>) {
-  return {...data, Gender: data.Gender ?? (data.Sex === 'Other' ? '' : data.Sex) ?? '', Age: data['Date of birth'] ? ageFromBirth(data['Date of birth'], data.Date || todayLocal()) : data.Age ?? ''};
+  const legacy=data['Pain Day-wise Status']??data['24 hours'];
+  return {...data, 'Pain Day-wise Status':Array.isArray(legacy)?legacy.join('; '):legacy??'', Gender: data.Gender ?? (data.Sex === 'Other' ? '' : data.Sex) ?? '', Age: data['Date of birth'] ? ageFromBirth(data['Date of birth'], data.Date || todayLocal()) : data.Age ?? ''};
 }
