@@ -4,17 +4,37 @@ import {symptoms} from './body-chart';
 const value=(v:any)=>Array.isArray(v)?v.length?v.join(', '):'None selected':v===undefined||v===null||v===''?'Not recorded':String(v);
 const clean=(s:string)=>s.replace(/[–—]/g,'-').replace(/[‘’]/g,"'").replace(/[“”]/g,'"').replace(/·/g,' | ');
 async function chartPng(svg:SVGSVGElement){const clone=svg.cloneNode(true) as SVGSVGElement;clone.setAttribute('xmlns','http://www.w3.org/2000/svg');clone.setAttribute('width','360');clone.setAttribute('height','760');clone.setAttribute('font-family','Arial, sans-serif');const url=URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(clone)],{type:'image/svg+xml;charset=utf-8'}));try{const image=new Image();image.src=url;await image.decode();const canvas=document.createElement('canvas');canvas.width=360;canvas.height=760;const ctx=canvas.getContext('2d')!;ctx.fillStyle='#fff';ctx.fillRect(0,0,360,760);ctx.drawImage(image,0,0);return canvas.toDataURL('image/png')}finally{URL.revokeObjectURL(url)}}
-export async function downloadReportPdf(record:{id:string,created:string,data:Record<string,any>},element:HTMLElement){const {data}=record;const pdf=new jsPDF({unit:'mm',format:'a4'});const margin=16,width=178,bottom=278;let y=0;
+export async function downloadReportPdf(record:{id:string,created:string,data:Record<string,any>},element:HTMLElement){const {data}=record;const pdf=new jsPDF({unit:'mm',format:'a4',compress:true});const margin=16,width=178,bottom=278;let y=0;
 function header(first=false){pdf.setTextColor('#254c42');pdf.setFont('helvetica','bold');pdf.setFontSize(first?23:14);pdf.text('Bliss Now',margin,first?23:18);pdf.setFontSize(first?11:9);pdf.setFont('helvetica','normal');pdf.text('Integrative Clinic',margin,first?30:24);pdf.setFontSize(10);pdf.text('Osteo Assessment Report',194,first?23:18,{align:'right'});pdf.setDrawColor('#cbdcd3');pdf.line(margin,first?36:29,194,first?36:29);y=first?43:37;}
 function room(h:number){if(y+h>bottom){pdf.addPage();header();}}
-function text(s:string,size=10){pdf.setFont('helvetica','normal');pdf.setFontSize(size);pdf.setTextColor('#263b34');const lines=pdf.splitTextToSize(clean(s),width);for(const line of lines){room(5);pdf.text(line,margin,y);y+=5;}}
-function section(title:string){room(17);y+=5;pdf.setFont('helvetica','bold');pdf.setFontSize(14);pdf.setTextColor('#254c42');pdf.text(title,margin,y);y+=8;}
+function text(s:string,size=10){pdf.setFont('helvetica','normal');pdf.setFontSize(size);pdf.setTextColor('#263b34');const lines=pdf.splitTextToSize(clean(s),width);for(const line of lines){room(5);pdf.setFont('helvetica','normal');pdf.setFontSize(size);pdf.setTextColor('#263b34');pdf.text(line,margin,y);y+=5;}}
+function section(title:string,firstContentHeight=23){room(13+firstContentHeight);y+=5;pdf.setFont('helvetica','bold');pdf.setFontSize(14);pdf.setTextColor('#254c42');pdf.text(title,margin,y);y+=8;}
 function row(label:string,v:any){room(15);pdf.setFont('helvetica','bold');pdf.setFontSize(9);pdf.setTextColor('#63766d');pdf.text(clean(label),margin,y);y+=5;text(value(v));y+=4;}
+function grid(fields:{label:string}[]){
+  const gap=12,colWidth=(width-gap)/2;
+  for(let i=0;i<fields.length;i+=2){
+    const pair=fields.slice(i,i+2);pdf.setFont('helvetica','normal');pdf.setFontSize(10);
+    const values=pair.map(f=>pdf.splitTextToSize(clean(value(data[f.label])),colWidth) as string[]);
+    let offsets=pair.map(()=>0),continued=false;
+    const totalHeight=10+Math.max(...values.map(lines=>lines.length))*5;
+    if(totalHeight<=bottom-37&&y+totalHeight>bottom){pdf.addPage();header();}
+    while(values.some((lines,j)=>offsets[j]<lines.length)){
+      if(bottom-y<21){pdf.addPage();header();}
+      const capacity=Math.max(1,Math.floor((bottom-y-10)/5));
+      let used=0;
+      pair.forEach((f,j)=>{const x=margin+j*(colWidth+gap);pdf.setFont('helvetica','normal');pdf.setFontSize(9);pdf.setTextColor('#63766d');pdf.text(clean(f.label)+(continued?' (continued)':''),x,y);const chunk=values[j].slice(offsets[j],offsets[j]+capacity);pdf.setFontSize(10);pdf.setTextColor('#263b34');if(chunk.length)pdf.text(chunk,x,y+6);offsets[j]+=chunk.length;used=Math.max(used,chunk.length);});
+      y+=10+used*5;
+      if(values.some((lines,j)=>offsets[j]<lines.length)){pdf.addPage();header();continued=true;}
+    }
+  }
+}
 header(true);pdf.setFontSize(9);pdf.setTextColor('#63766d');for(const [i,key] of ['Name','Phone number','Age','Date'].entries()){const x=margin+i*45;pdf.text(key==='Date'?'Assessment date':key,x,y);pdf.setTextColor('#263b34');pdf.setFont('helvetica','bold');const lines=pdf.splitTextToSize(clean(value(data[key])),41);pdf.text(lines,x,y+6);pdf.setFont('helvetica','normal');pdf.setTextColor('#63766d');}const maxSummary=Math.max(...['Name','Phone number','Age','Date'].map(k=>pdf.splitTextToSize(clean(value(data[k])),41).length));y+=14+(maxSummary-1)*5;
 section('Body chart');room(115);const svgs=Array.from(element.querySelectorAll<SVGSVGElement>('svg[data-chart-side]'));const images=await Promise.all(svgs.map(chartPng));const top=y;for(let i=0;i<images.length;i++){pdf.setFontSize(10);pdf.setTextColor('#263b34');pdf.text(i===0?'Front':'Back',i===0?68:142,top,{align:'center'});pdf.addImage(images[i],'PNG',i===0?46:120,top+4,44,93);}y=top+103;
 for(const [i,s] of symptoms.entries()){room(7);if(s.name==='Radiating'){for(let j=0;j<16;j++){pdf.setFillColor(220+(243-220)*j/15,52+(216-52)*j/15,52+(62-52)*j/15);pdf.rect(margin+j*.45,y-3,.45,3,'F');}}else{pdf.setFillColor(s.color);pdf.rect(margin,y-3,7,3,'F');}pdf.setFontSize(9);pdf.setTextColor('#263b34');pdf.text(clean(s.name),margin+10,y);y+=6;}
 text((data['Body markers']||[]).length?(data['Body markers']||[]).map((p:any)=>`${p.side}: ${p.symptom}, intensity ${p.intensity}/10`).join('; '):'No symptom markers recorded.',9);y+=4;row('Body chart notes',data['Body chart notes']);
-for(const s of [sections[1],sections[3],sections[4]]){section(s.title);for(const f of s.fields)row(f.label,data[f.label]);}
-section('Additional patient information');for(const f of sections[0].fields.filter(f=>!['Name','Phone number','Age','Date'].includes(f.label)))row(f.label,data[f.label]);
+function firstRowHeight(fields:{label:string}[]){pdf.setFont('helvetica','normal');pdf.setFontSize(10);return Math.min(200,10+Math.max(...fields.slice(0,2).map(f=>pdf.splitTextToSize(clean(value(data[f.label])),83).length))*5);}
+for(const s of [sections[1],sections[3],sections[4]]){section(s.title,firstRowHeight(s.fields));grid(s.fields);}
+section('Additional patient information');grid(sections[0].fields.filter(f=>!['Name','Phone number','Age','Date'].includes(f.label)));
 for(let i=1;i<=pdf.getNumberOfPages();i++){pdf.setPage(i);pdf.setDrawColor('#cbdcd3');pdf.line(margin,283,194,283);pdf.setFont('helvetica','normal');pdf.setFontSize(8);pdf.setTextColor('#63766d');pdf.text('Bliss Now Integrative Clinic',margin,289);pdf.text(`Page ${i} of ${pdf.getNumberOfPages()}`,194,289,{align:'right'});}
-pdf.save(`Bliss-Now-${String(data.Name||'Client').replace(/[^\p{L}\p{N} -]/gu,'').trim().slice(0,60)||'Client'}-${data.Date||'assessment'}.pdf`);}
+const filenameDate=/^\d{4}-\d{2}-\d{2}$/.test(data.Date||'')?data.Date.split('-').reverse().join('-'):'assessment';
+pdf.save(`Bliss-Now-${String(data.Name||'Client').replace(/[^\p{L}\p{N} -]/gu,'').trim().slice(0,60)||'Client'}-${filenameDate}.pdf`);}
